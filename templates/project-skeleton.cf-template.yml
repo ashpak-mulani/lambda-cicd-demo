@@ -1,0 +1,117 @@
+# Use the ci/params.parameters file to specify the parameters for this template or the build will fail. 
+
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: ECSD Example Serverless Application
+
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+
+  pArtifactS3BucketName:
+    AllowedPattern: ^[0-9a-zA-Z]+([0-9a-zA-Z-.]*[0-9a-zA-Z])*$
+    ConstraintDescription: bucket name can include numbers, lowercase
+      letters, uppercase letters, periods (.), and hyphens (-). It cannot start or
+      end with a hyphen (-).
+    Description: S3 bucket name for the Cfn assets. bucket name
+      can include numbers, lowercase letters, uppercase letters, and hyphens (-).
+      It cannot start or end with a hyphen (-).
+    Type: String
+
+  pArtifactS3Key:
+    AllowedPattern: ^[0-9a-zA-Z-\/\.]*$
+    ConstraintDescription: key can include numbers, lowercase letters,
+      uppercase letters, hyphens (-), and forward slash (/). It cannot start or end
+      with forward slash (/) because they are automatically appended.
+    Description: S3 key for the Lambda zipfile. key
+      can include numbers, lowercase letters, uppercase letters, hyphens (-), and
+      forward slash (/). It cannot start or end with forward slash (/) because they
+      are automatically appended.
+    Type: String
+
+  pLogLevel:
+    Description: verbosity level of function loggers
+    Type: String
+    Default: DEBUG
+    AllowedValues:
+      - CRITICAL
+      - ERROR
+      - WARNING
+      - INFO
+      - DEBUG
+
+  #
+  # add parameters for application specific configuration and reference external resources (not provisioned by this template) here
+  #
+
+  #pMyExampleParam:
+  #  Description: an example parameter from the ci/config.json file
+  #  Type: String
+
+Conditions:
+  #
+  # add conditions for your application here
+  #
+Globals:
+
+  Function:
+    Runtime: python3.8
+    Timeout: 300
+
+Resources:
+
+  # this IAM Role is used by the Lambda Function for basic execution and access to other AWS resources
+  rMyExampleAppFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      # add policies to grant access to other known resources the Lambda Function will use
+      # Policies:
+      #   - PolicyName: lex-access
+      #     PolicyDocument:
+      #       Version: '2012-10-17'
+      #       Statement:
+      #         - Effect: Allow
+      #           Action:
+      #             - lex:*
+      #           Resource:
+      #             - '*'
+      # the following Managed Policies will always be needed
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  #
+  # add any other AWS resources that your Lambda Function requires here
+  #
+
+  # the Lambda function providing application functionality
+
+  rMyExampleAppFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: survey_feedback.lambda_handler
+      Environment:
+        Variables:
+          LOG_LEVEL: !Ref pLogLevel
+      CodeUri: ./src/example-function
+      Role: !GetAtt rMyExampleAppFunctionRole.Arn
+
+Outputs:
+
+  #
+  # pass any important resources you have created here as stack outputs
+  #
+
+  MyExampleLambdaFunction:
+    Description: Arn with Alias of the example lambda function
+    Value: !Ref rMyExampleAppFunction.Alias
+

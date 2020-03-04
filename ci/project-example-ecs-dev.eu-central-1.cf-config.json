@@ -1,0 +1,13 @@
+{
+  "Parameters" : {
+    "pArtifactS3BucketName": "my-example-parameter-value",
+    "pArtifactS3Key": "survey_feedback.zip",
+    "pLogLevel": "DEBUG"    
+  },
+  "Tags" : {
+    "Environment" : "dev",
+    "Project" : "not-defined",
+    "Retain" : "not-defined",
+    "Owner" : "not-defined"
+  }
+}
