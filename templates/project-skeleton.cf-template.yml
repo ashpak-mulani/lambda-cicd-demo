@@ -11,27 +11,6 @@ Transform: AWS::Serverless-2016-10-31
 
 Parameters:
 
-  pArtifactS3BucketName:
-    AllowedPattern: ^[0-9a-zA-Z]+([0-9a-zA-Z-.]*[0-9a-zA-Z])*$
-    ConstraintDescription: bucket name can include numbers, lowercase
-      letters, uppercase letters, periods (.), and hyphens (-). It cannot start or
-      end with a hyphen (-).
-    Description: S3 bucket name for the Cfn assets. bucket name
-      can include numbers, lowercase letters, uppercase letters, and hyphens (-).
-      It cannot start or end with a hyphen (-).
-    Type: String
-
-  pArtifactS3Key:
-    AllowedPattern: ^[0-9a-zA-Z-\/\.]*$
-    ConstraintDescription: key can include numbers, lowercase letters,
-      uppercase letters, hyphens (-), and forward slash (/). It cannot start or end
-      with forward slash (/) because they are automatically appended.
-    Description: S3 key for the Lambda zipfile. key
-      can include numbers, lowercase letters, uppercase letters, hyphens (-), and
-      forward slash (/). It cannot start or end with forward slash (/) because they
-      are automatically appended.
-    Type: String
-
   pFunctionAliasName:
     Description: The Lambda Function Alias name.
     Type: String
@@ -79,13 +58,7 @@ Parameters:
       - ENABLED
       - DISABLED
 
-  #
-  # add parameters for application specific configuration and reference external resources (not provisioned by this template) here
-  #
 
-  pMyExampleParam:
-    Description: an example parameter from the ci/config.json file
-    Type: String
 
 Conditions:
 

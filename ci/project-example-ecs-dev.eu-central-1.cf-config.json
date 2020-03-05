@@ -1,6 +1,5 @@
 {
   "Parameters" : {
-    "pMyExampleParam": "my-example-parameter-value",
     "pLogLevel": "DEBUG",
     "pEnableLambdaWarming": "DISABLED"
   },
