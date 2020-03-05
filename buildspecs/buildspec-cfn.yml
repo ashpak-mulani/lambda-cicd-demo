@@ -2,7 +2,7 @@ version: 0.2
 phases:
   build:
     commands:
-      - aws cloudformation package --template-file project-skeleton.cf-template.yml --s3-bucket pune-dev-codepipeline --output-template-file outputSamTemplate.yaml
+      - aws cloudformation package --template-file ./templates/project-skeleton.cf-template.yml --s3-bucket pune-dev-codepipeline --output-template-file outputSamTemplate.yaml
 artifacts:
   type: zip
   files:
