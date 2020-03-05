@@ -203,7 +203,7 @@ Resources:
           EXAMPLE_PARAM: !Ref pMyExampleParam
           LOG_LEVEL: !Ref pLogLevel
           # pass reference to any other resources your Lambda function requires here
-      CodeUri: ./src/example-function
+      CodeUri: ../src/example-function
       Role: !GetAtt rMyExampleAppFunctionRole.Arn
       DeploymentPreference:
         Type: !Ref pDeploymentPreference
@@ -295,7 +295,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       Handler: pre_traffic.handler
-      CodeUri: ./src/example-function
+      CodeUri: ../src/example-function
       Role: !GetAtt rLambdaPreHookFunctionRole.Arn
       Environment:
         Variables:
@@ -347,7 +347,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       Handler: post_traffic.handler
-      CodeUri: ./src/example-function
+      CodeUri: ../src/example-function
       Role: !GetAtt rLambdaPostHookFunctionRole.Arn
       Environment:
         Variables:
