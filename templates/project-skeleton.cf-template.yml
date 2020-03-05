@@ -1,4 +1,7 @@
-# Use the ci/params.parameters file to specify the parameters for this template or the build will fail. 
+# This template will install a lambda function. Use the ci/params.parameters file to specify
+# the parameters for this template or the build will fail. This is classed as the 'Parent'
+# template name when you are using the pipleines build from the AWS refarch repo located here:
+# https://github.ecs-digital.co.uk/ECSD/ecsd-aws-refarch/tree/master/templates/codepipeline
 
 AWSTemplateFormatVersion: 2010-09-09
 
@@ -29,6 +32,34 @@ Parameters:
       are automatically appended.
     Type: String
 
+  pFunctionAliasName:
+    Description: The Lambda Function Alias name.
+    Type: String
+    Default: Live
+
+  pDeploymentPreference:
+    Description: The traffic shaping deployment preference.
+    Type: String
+    Default: Canary10Percent5Minutes
+    AllowedValues:
+      - AllAtOnce
+      - Linear10PercentEvery10Minutes
+      - Linear10PercentEvery1Minute
+      - Linear10PercentEvery2Minutes
+      - Linear10PercentEvery3Minutes
+      - Canary10Percent30Minutes
+      - Canary10Percent5Minutes
+      - Canary10Percent10Minutes
+      - Canary10Percent15Minutes
+
+  pLambdaTracing:
+    Description: Enable Lambda X-Ray Tracing.
+    Type: String
+    Default: true
+    AllowedValues:
+      - true
+      - false
+
   pLogLevel:
     Description: verbosity level of function loggers
     Type: String
@@ -40,25 +71,92 @@ Parameters:
       - INFO
       - DEBUG
 
+  pEnableLambdaWarming:
+    Description: Enable warming of Lambda function with CloudWatch Rule
+    Type: String
+    Default: DISABLED
+    AllowedValues:
+      - ENABLED
+      - DISABLED
+
   #
   # add parameters for application specific configuration and reference external resources (not provisioned by this template) here
   #
 
-  #pMyExampleParam:
-  #  Description: an example parameter from the ci/config.json file
-  #  Type: String
+  pMyExampleParam:
+    Description: an example parameter from the ci/config.json file
+    Type: String
 
 Conditions:
-  #
-  # add conditions for your application here
-  #
+
+  EnableTracing: !Equals [ !Ref pLambdaTracing, 'true' ]
+
+  EnableLambdaWarming: !Equals [ !Ref pEnableLambdaWarming, 'ENABLED' ]
+
 Globals:
 
   Function:
-    Runtime: python3.8
+    Runtime: python3.7
     Timeout: 300
+    AutoPublishAlias: !Ref pFunctionAliasName
+    Tracing: !If
+      - EnableTracing
+      - Active
+      - !Ref AWS::NoValue
 
 Resources:
+
+  # this IAM Role is used by CodeDeploy to manage traffic shifting between old and new Lambda function versions
+  # it shouldn't need modification
+  rLambdaCodeDeployRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W11
+            reason: "This role should allow any cloudwatch:DescribeAlarms lambda:UpdateAlias lambda:GetAlias sns:Publish."
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codedeploy.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: lambda-codedeploy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Action:
+                  - cloudwatch:DescribeAlarms
+                  - lambda:UpdateAlias
+                  - lambda:GetAlias
+                  - sns:Publish
+                Resource: '*'
+                Effect: Allow
+              - Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                Resource: arn:aws:s3:::*/CodeDeploy/*
+                Effect: Allow
+              - Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    s3:ExistingObjectTag/UseWithCodeDeploy: 'true'
+                Effect: Allow
+              - Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !GetAtt rPreTrafficLambdaFunction.Arn
+                  - !GetAtt rPostTrafficLambdaFunction.Arn
+                Effect: Allow
 
   # this IAM Role is used by the Lambda Function for basic execution and access to other AWS resources
   rMyExampleAppFunctionRole:
@@ -88,6 +186,7 @@ Resources:
       # the following Managed Policies will always be needed
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
 
   #
   # add any other AWS resources that your Lambda Function requires here
@@ -98,12 +197,193 @@ Resources:
   rMyExampleAppFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: survey_feedback.lambda_handler
+      Handler: example_lambda.handler
       Environment:
         Variables:
+          EXAMPLE_PARAM: !Ref pMyExampleParam
           LOG_LEVEL: !Ref pLogLevel
-      CodeUri: ./src/example-function
+          # pass reference to any other resources your Lambda function requires here
+      CodeUri:
+        Bucket: !Ref pArtifactS3BucketName
+        Key: !Ref pArtifactS3Key
       Role: !GetAtt rMyExampleAppFunctionRole.Arn
+      DeploymentPreference:
+        Type: !Ref pDeploymentPreference
+        Role: !GetAtt rLambdaCodeDeployRole.Arn
+        Alarms:
+          # A list of alarms that you want to monitor
+          - !Ref rMyExampleAppFunctionAliasErrorAlarm
+          - !Ref rMyExampleAppFunctionVersionErrorAlarm
+        Hooks:
+          # validation Lambda functions that are run before & after traffic shifting
+          # these should be added to test your code
+          PreTraffic: !Ref rPreTrafficLambdaFunction
+          PostTraffic: !Ref rPostTrafficLambdaFunction
+
+  # this will alarm on execution error for the Lambda Function alias
+  rMyExampleAppFunctionAliasErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Lambda Function Error > 0
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: Resource
+          Value: !Sub ${rMyExampleAppFunction}:${pFunctionAliasName}
+        - Name: FunctionName
+          Value: !Ref rMyExampleAppFunction
+      EvaluationPeriods: 1
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Period: 300
+      Statistic: Sum
+      Threshold: 0
+
+  # this will alarm on execution error for the new Lambda Function version
+  rMyExampleAppFunctionVersionErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Lambda Function Error > 0
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: Resource
+          Value: !Ref rMyExampleAppFunction.Version
+        - Name: FunctionName
+          Value: !Ref rMyExampleAppFunction
+      EvaluationPeriods: 1
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Period: 300
+      Statistic: Sum
+      Threshold: 0
+
+  # this IAM Role is used by the Lambda Pre-Hook Function to access other AWS resources
+  rLambdaPreHookFunctionRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W11
+            reason: "This role should allow codedeploy:PutLifecycleEventHookExecutionStatus."
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: lambda-hook
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - codedeploy:PutLifecycleEventHookExecutionStatus
+                Resource:
+                  !Sub 'arn:aws:codedeploy:${AWS::Region}:${AWS::AccountId}:deploymentgroup:${ServerlessDeploymentApplication}/*'
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource: !Sub '${rMyExampleAppFunction.Arn}:*'
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+
+  rPreTrafficLambdaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: pre_traffic.handler
+      CodeUri:
+        Bucket: !Ref pArtifactS3BucketName
+        Key: !Ref pArtifactS3Key
+      Role: !GetAtt rLambdaPreHookFunctionRole.Arn
+      Environment:
+        Variables:
+          FUNCTION_NAME: !Ref rMyExampleAppFunction
+          FUNCTION_VERSION: !Ref rMyExampleAppFunction.Version
+          LOG_LEVEL: DEBUG
+      DeploymentPreference:
+        Enabled: false
+      Timeout: 5
+
+  # this IAM Role is used by the Lambda Post-Hook Function to access other AWS resources
+  rLambdaPostHookFunctionRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W11
+            reason: "This role should allow codedeploy:PutLifecycleEventHookExecutionStatus."
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: lambda-hook
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - codedeploy:PutLifecycleEventHookExecutionStatus
+                Resource:
+                  !Sub 'arn:aws:codedeploy:${AWS::Region}:${AWS::AccountId}:deploymentgroup:${ServerlessDeploymentApplication}/*'
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource: !Sub '${rMyExampleAppFunction.Arn}:*'
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+
+  rPostTrafficLambdaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: post_traffic.handler
+      CodeUri:
+        Bucket: !Ref pArtifactS3BucketName
+        Key: !Ref pArtifactS3Key
+      Role: !GetAtt rLambdaPostHookFunctionRole.Arn
+      Environment:
+        Variables:
+          FUNCTION_NAME: !Ref rMyExampleAppFunction
+          FUNCTION_VERSION: !Ref rMyExampleAppFunction.Version
+          LOG_LEVEL: DEBUG
+      DeploymentPreference:
+        Enabled: false
+      Timeout: 5
+
+  rLambdaWarmingEventSchedulePermission:
+    Condition: EnableLambdaWarming
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref rMyExampleAppFunction.Alias
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt rLambdaWarmingEvent.Arn
+
+  # Update cron to match the required invocation timeframe
+  rLambdaWarmingEvent:
+    Condition: EnableLambdaWarming
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Regularly invoke MyExampleApp Function to keep it warm
+      ScheduleExpression: cron(0/5 8-19 ? * MON-FRI *)
+      State: !Ref pEnableLambdaWarming
+      Targets:
+        - Arn: !Ref rMyExampleAppFunction.Alias
+          Id: !Ref rMyExampleAppFunction
 
 Outputs:
 
@@ -115,3 +395,7 @@ Outputs:
     Description: Arn with Alias of the example lambda function
     Value: !Ref rMyExampleAppFunction.Alias
 
+  MyExampleAppFunctionWarmingEvent:
+    Condition: EnableLambdaWarming
+    Description: Arn of the example lambda function warming event
+    Value: !Ref rLambdaWarmingEvent

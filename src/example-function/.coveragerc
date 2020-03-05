@@ -1,0 +1,2 @@
+[run]
+omit = test/*, post_traffic.py, pre_traffic.py

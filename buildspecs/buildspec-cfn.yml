@@ -1,0 +1,20 @@
+version: 0.2
+phases:
+  install:
+    runtime-versions:
+      ruby: 2.6
+    commands:
+      - pip install -q --upgrade pip pyyaml==5.1 cfn-lint awscli botocore boto3 aws-sam-translator
+      - gem install cfn-nag --no-document
+  pre_build:
+    commands:
+      - cfn-lint -f parseable -c I -t ./templates/* --ignore-checks W3011, I3011
+      - cfn_nag_scan --input-path ./templates
+  build:
+    commands:
+      - aws cloudformation package --template-file $CFN_PARENT_TEMPLATE --output-template-file $CFN_PACKAGED_TEMPLATE --s3-bucket $CFN_BUCKET_NAME --kms-key-id $CFN_BUCKET_KMS_KEY
+artifacts:
+  type: zip
+  files:
+    - $CFN_PACKAGED_TEMPLATE
+    - $CFN_CONFIG

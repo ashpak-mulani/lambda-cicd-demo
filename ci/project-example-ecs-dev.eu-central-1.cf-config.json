@@ -1,8 +1,8 @@
 {
   "Parameters" : {
-    "pArtifactS3BucketName": "my-example-parameter-value",
-    "pArtifactS3Key": "survey_feedback.zip",
-    "pLogLevel": "DEBUG"    
+    "pMyExampleParam": "my-example-parameter-value",
+    "pLogLevel": "DEBUG",
+    "pEnableLambdaWarming": "DISABLED"
   },
   "Tags" : {
     "Environment" : "dev",
