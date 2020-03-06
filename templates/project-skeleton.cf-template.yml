@@ -173,7 +173,6 @@ Resources:
       Handler: example_lambda.handler
       Environment:
         Variables:
-          EXAMPLE_PARAM: !Ref pMyExampleParam
           LOG_LEVEL: !Ref pLogLevel
           # pass reference to any other resources your Lambda function requires here
       CodeUri: ../src/example-function
